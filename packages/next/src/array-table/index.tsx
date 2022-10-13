@@ -5,12 +5,14 @@ import React, {
   useEffect,
   createContext,
   useContext,
+  useCallback,
 } from 'react'
 import { Table, Pagination, Select, Badge } from '@alifd/next'
 import { PaginationProps } from '@alifd/next/lib/pagination'
 import { TableProps, ColumnProps } from '@alifd/next/lib/table'
 import { SelectProps } from '@alifd/next/lib/select'
 import cls from 'classnames'
+import { SortableContainer, SortableElement } from 'react-sortable-hoc'
 import { GeneralField, FieldDisplayTypes, ArrayField } from '@formily/core'
 import {
   useField,
@@ -58,6 +60,9 @@ interface PaginationAction {
   pageSize?: number
   changePage?: (page: number) => void
 }
+
+const SortableRow = SortableElement((props: any) => <tr {...props} />)
+const SortableBody = SortableContainer((props: any) => <tbody {...props} />)
 
 const isColumnComponent = (schema: Schema) => {
   return schema['x-component']?.indexOf('Column') > -1
@@ -292,6 +297,10 @@ const omit = (props: any, keys?: string[]) => {
     }, {})
 }
 
+const RowComp = (props: any) => {
+  return <SortableRow index={props['data-row-key'] || 0} {...props} />
+}
+
 export const ArrayTable: ComposedArrayTable = observer(
   (props: ExtendTableProps) => {
     const ref = useRef<HTMLDivElement>()
@@ -302,6 +311,39 @@ export const ArrayTable: ComposedArrayTable = observer(
     const columns = useArrayTableColumns(field, sources)
     const pagination = isBool(props.pagination) ? {} : props.pagination
     const addition = useAddition()
+    const addTdStyles = (node: HTMLElement) => {
+      const helper = document.body.querySelector(`.${prefixCls}-sort-helper`)
+      if (helper) {
+        const tds = node.querySelectorAll('td')
+        requestAnimationFrame(() => {
+          helper.querySelectorAll('td').forEach((td, index) => {
+            if (tds[index]) {
+              td.style.width = getComputedStyle(tds[index]).width
+            }
+          })
+        })
+      }
+    }
+    const WrapperComp = useCallback(
+      (props: any) => (
+        <SortableBody
+          useDragHandle
+          lockAxis="y"
+          helperClass={`${prefixCls}-sort-helper`}
+          helperContainer={() => {
+            return ref.current?.querySelector('tbody')
+          }}
+          onSortStart={({ node }) => {
+            addTdStyles(node as HTMLElement)
+          }}
+          onSortEnd={({ oldIndex, newIndex }) => {
+            field.move(oldIndex, newIndex)
+          }}
+          {...props}
+        />
+      ),
+      []
+    )
 
     return (
       <ArrayTablePagination {...pagination} dataSource={dataSource}>
@@ -313,6 +355,12 @@ export const ArrayTable: ComposedArrayTable = observer(
                 {...omit(props, ['value', 'onChange', 'pagination'])}
                 columns={columns}
                 dataSource={dataSource}
+                components={{
+                  body: {
+                    wrapper: WrapperComp,
+                    row: RowComp,
+                  },
+                }}
               />
               <div style={{ marginTop: 5, marginBottom: 5 }}>{pager}</div>
               {sources.map((column, key) => {
